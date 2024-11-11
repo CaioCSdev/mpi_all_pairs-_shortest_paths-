@@ -14,38 +14,35 @@ typedef struct {
 Matrix read_file(char *filename);
 void print_location();
 void print_matrix(Matrix matrix);
+int min_in_ij(Matrix matrix, int i, int j);
+void step(Matrix matrix);
 
-int min_in_ij(Matrix matrix, int i, int j) {
-  int min = matrix.vals[i][j];
-  int candidate;
-
-  for (int k = 0; k < matrix.n; k++) {
-    if (matrix.vals[i][k] == INT_MAX || matrix.vals[k][j] == INT_MAX)
-      continue;
-    candidate = matrix.vals[i][k] + matrix.vals[k][j];
-    if (candidate < min)
-      min = candidate;
+int usable_procs(int num_procs, int n) {
+  /* returns the largest p which p <= num_procs, q*q = p and n % q == 0 */
+  for (int q = sqrt(num_procs); q > 0; q--) {
+    if (n % q == 0)
+      return q * q;
   }
 
-  return min;
-}
-
-void step(Matrix matrix) {
-  for (int i = 0; i < matrix.n; i++) {
-    for (int j = 0; j < matrix.n; j++) {
-      matrix.vals[i][j] = min_in_ij(matrix, i, j);
-    }
-  }
+  return 1;
 }
 
 int main(int argc, char **argv) {
-  int my_rank;
+  int my_rank, num_procs, my_row_rank, q;
+  MPI_Comm my_row;
+
   MPI_Init(&argc, &argv);
-
   MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
+  MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
 
-  if (my_rank == 0) {
-    Matrix matrix = read_file(argv[1]);
+  Matrix matrix = read_file(argv[1]);
+  num_procs = usable_procs(num_procs, matrix.n);
+  q = sqrt(num_procs);
+
+  MPI_Comm_split(MPI_COMM_WORLD, my_rank / q, my_rank, &my_row);
+  MPI_Comm_rank(my_row, &my_row_rank);
+
+  if (my_rank == -1) {
     for (int i = 0; i < matrix.n - 2; i++)
       step(matrix);
     print_matrix(matrix);
@@ -84,6 +81,29 @@ Matrix read_file(char *filename) {
   return matrix;
 }
 
+int min_in_ij(Matrix matrix, int i, int j) {
+  int min = matrix.vals[i][j];
+  int candidate;
+
+  for (int k = 0; k < matrix.n; k++) {
+    if (matrix.vals[i][k] == INT_MAX || matrix.vals[k][j] == INT_MAX)
+      continue;
+    candidate = matrix.vals[i][k] + matrix.vals[k][j];
+    if (candidate < min)
+      min = candidate;
+  }
+
+  return min;
+}
+
+void step(Matrix matrix) {
+  for (int i = 0; i < matrix.n; i++) {
+    for (int j = 0; j < matrix.n; j++) {
+      matrix.vals[i][j] = min_in_ij(matrix, i, j);
+    }
+  }
+}
+
 void print_matrix(Matrix matrix) {
   int val;
 
@@ -92,9 +112,10 @@ void print_matrix(Matrix matrix) {
       val = matrix.vals[i][j] == INT_MAX ? 0 : matrix.vals[i][j];
       printf("%d ", val);
     }
-    val = matrix.vals[i][matrix.n - 1] == INT_MAX
-      ? 0
-      : matrix.vals[i][matrix.n - 1];
+    if (matrix.vals[i][matrix.n - 1] == INT_MAX)
+      val = 0;
+    else
+      val = matrix.vals[i][matrix.n - 1];
     printf("%d", val);
     printf("\n");
   }

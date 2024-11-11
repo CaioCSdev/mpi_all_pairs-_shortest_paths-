@@ -1,7 +1,7 @@
 .PHONY: run run-cluster deploy
 
 fox: main.c main.h
-	mpicc -Wall --pedantic -g -o fox main.c
+	mpicc -Wall --pedantic -g -o fox main.c -lm
 
 run: fox
 	@mpirun fox input
