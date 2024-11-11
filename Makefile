@@ -12,3 +12,6 @@ deploy: fox
 run-cluster: deploy
 	@ssh -J up202410254@ssh.alunos.dcc.fc.up.pt up202410254@L102 -t 'cd classes/parallel/pa1; make fox ; mpirun --hostfile hostnames --use-hwthread-cpus fox input'
 
+test: fox
+	@mpirun fox input > code.output
+	@diff code.output output -q
