@@ -6,6 +6,8 @@
 #include <string.h>
 #include <unistd.h>
 
+#define tag 0
+
 typedef struct {
   int n;
   int *vals;
@@ -36,25 +38,24 @@ void Fox(int n, GRID *grid, Matrix *local_A, Matrix *local_B, Matrix *local_C) {
   int n_bar;
   int source;
   int dest;
-  int tag = 43;
   MPI_Status status;
 
   n_bar = n / grid->q;
   for (int i = 0; i < n_bar * n_bar; i++)
-    local_C->vals[i] = 0;
+    local_C->vals[i] = INT_MAX;
 
   /* Calculate addresses for circular shift of B */
   source = (grid->my_row + 1) % grid->q;
   dest = (grid->my_row + grid->q - 1) % grid->q;
 
-  /* Set aside storage for the broadcast block of A */
   temp_A = (Matrix *)malloc(sizeof(Matrix));
   temp_A->n = n_bar;
   temp_A->vals = (int *)malloc(n_bar * n_bar * sizeof(int));
 
-  for (step = 0; step < grid->q; step++) {
+  // printf("row: %d, col: %d\n", grid->my_row, grid->my_col);
+  for (step = 0; step < n; step++) {
     bcast_root = (grid->my_row + step) % grid->q;
-    if (bcast_root != grid->my_col) {
+    if (bcast_root == grid->my_col) {
       MPI_Bcast(local_A->vals, local_A->n, MPI_INT, bcast_root, grid->row_comm);
       calculate(local_A, local_B, local_C);
     } else {
@@ -65,6 +66,7 @@ void Fox(int n, GRID *grid, Matrix *local_A, Matrix *local_B, Matrix *local_C) {
     MPI_Recv(local_B->vals, local_B->n, MPI_INT, source, tag, grid->col_comm,
              &status);
   }
+  // print_matrix(*local_C);
 }
 
 int main(int argc, char **argv) {
@@ -136,7 +138,27 @@ int main(int argc, char **argv) {
     }
   }
 
-  Fox(matrix.n, &grid, &local_A, &local_B, &local_C);
+  for (int i = 0; i < matrix.n - 2; i++) {
+
+    Fox(matrix.n, &grid, &local_A, &local_B, &local_C);
+  local_A = local_C;
+  local_B = local_C;
+  }
+
+  for (int i = 0; i < matrix.n; i++) {
+    for (int j = 0; j < matrix.n; j++) {
+      int row = i / local_A.n;
+      int col = j / local_A.n;
+      if (grid.my_row == row && grid.my_col == col) {
+        int local_i = i % local_A.n;
+        int local_j = j % local_A.n;
+
+        matrix.vals[j + i * matrix.n] =
+            local_C.vals[local_j + local_i * local_C.n];
+      }
+    }
+  }
+
   if (my_rank == 0) {
     print_matrix(matrix);
   }
@@ -148,8 +170,8 @@ int main(int argc, char **argv) {
   // }
 
   // if (my_rank == 0) {
-  //   for (int i = 0; i < matrix.n - 2; i++)
-  //     calculate(&matrix, &matrix, &matrix);
+  // for (int i = 0; i < matrix.n - 2; i++)
+  //   calculate(&matrix, &matrix, &matrix);
   //   print_matrix(matrix);
   // }
   // print_location();
@@ -212,7 +234,10 @@ int min_in_ij(Matrix *a, Matrix *b, int i, int j) {
 void calculate(Matrix *a, Matrix *b, Matrix *c) {
   for (int i = 0; i < a->n; i++) {
     for (int j = 0; j < a->n; j++) {
-      c->vals[j + i * a->n] = min_in_ij(a, b, i, j);
+      int old_min = c->vals[j + i * a->n];
+      int new_min = min_in_ij(a, b, i, j);
+      if (new_min < old_min)
+        c->vals[j + i * a->n] = new_min;
     }
   }
 }

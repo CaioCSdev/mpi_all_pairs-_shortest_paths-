@@ -4,7 +4,7 @@ fox: main.c main.h
 	mpicc -Wall --pedantic -g -o fox main.c -lm
 
 run: fox
-	@mpirun fox input
+	@mpirun --use-hwthread-cpus fox input
 
 deploy: fox
 	rsync --rsh 'ssh -J up202410254@ssh.alunos.dcc.fc.up.pt' --human-readable --recursive . up202410254@L102:/net/areas/homes/up202410254/classes/parallel/pa1
