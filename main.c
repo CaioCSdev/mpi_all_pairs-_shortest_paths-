@@ -22,27 +22,12 @@ typedef struct {
   int my_rank;       // my rank in the grid
 } GRID;
 
-MPI_Datatype MPI_Matrix;
-
 Matrix read_file(char *filename);
 void print_location();
 void print_matrix(Matrix matrix);
 int min_in_ij(Matrix *a, Matrix *b, int i, int j);
 void calculate(Matrix *A, Matrix *B, Matrix *C);
 int usable_procs(int num_procs, int n);
-
-// Function to create MPI datatype for Matrix struct
-void create_MPI_Matrix(int n) {
-  int block_lengths[2] = {1, n * n};
-  MPI_Aint offsets[2];
-  MPI_Datatype types[2] = {MPI_INT, MPI_INT};
-
-  offsets[0] = offsetof(Matrix, n);
-  offsets[1] = offsetof(Matrix, vals);
-
-  MPI_Type_create_struct(2, block_lengths, offsets, types, &MPI_Matrix);
-  MPI_Type_commit(&MPI_Matrix);
-}
 
 void Fox(int n, GRID *grid, Matrix *local_A, Matrix *local_B, Matrix *local_C) {
   Matrix *temp_A;
@@ -69,15 +54,16 @@ void Fox(int n, GRID *grid, Matrix *local_A, Matrix *local_B, Matrix *local_C) {
 
   for (step = 0; step < grid->q; step++) {
     bcast_root = (grid->my_row + step) % grid->q;
-    if (bcast_root == grid->my_col) {
-      MPI_Bcast(local_A, 1, MPI_Matrix, bcast_root, grid->row_comm);
+    if (bcast_root != grid->my_col) {
+      MPI_Bcast(local_A->vals, local_A->n, MPI_INT, bcast_root, grid->row_comm);
       calculate(local_A, local_B, local_C);
     } else {
-      MPI_Bcast(temp_A, 1, MPI_Matrix, bcast_root, grid->row_comm);
+      MPI_Bcast(temp_A->vals, temp_A->n, MPI_INT, bcast_root, grid->row_comm);
       calculate(temp_A, local_B, local_C);
     }
-    MPI_Send(local_B, 1, MPI_Matrix, dest, tag, grid->col_comm);
-    MPI_Recv(local_B, 1, MPI_Matrix, source, tag, grid->col_comm, &status);
+    MPI_Send(local_B->vals, local_B->n, MPI_INT, dest, tag, grid->col_comm);
+    MPI_Recv(local_B->vals, local_B->n, MPI_INT, source, tag, grid->col_comm,
+             &status);
   }
 }
 
@@ -129,7 +115,6 @@ int main(int argc, char **argv) {
   and assigns a row and column communicator to each process.
   */
 
-  create_MPI_Matrix(matrix.n / grid.q);
   Matrix local_A, local_B, local_C;
   local_A.n = local_B.n = local_C.n = matrix.n / grid.q;
   local_A.vals = (int *)malloc(local_A.n * local_A.n * sizeof(int));
@@ -152,7 +137,9 @@ int main(int argc, char **argv) {
   }
 
   Fox(matrix.n, &grid, &local_A, &local_B, &local_C);
-  print_matrix(local_C);
+  if (my_rank == 0) {
+    print_matrix(matrix);
+  }
   // if (my_rank == 1) {
   //   printf("my_rank is: %d, local_A n is: %d, procs: %d\n", my_rank,
   //   local_A.n,
